@@ -163,8 +163,9 @@ cmd_vm() {
         snapshot) cmd_vm_snapshot "$@" ;;
         export)   cmd_vm_export  "$@" ;;
         import)   cmd_vm_import  "$@" ;;
-        fleet)    cmd_vm_fleet   "$@" ;;
-        monitor)  cmd_vm_monitor "$@" ;;
+        fleet)    cmd_vm_fleet    "$@" ;;
+        monitor)  cmd_vm_monitor  "$@" ;;
+        template) cmd_vm_template "$@" ;;
         backup)   cmd_vm_backup  "$@" ;;
         restore)  cmd_vm_restore "$@" ;;
         assemble) cmd_vm_assemble "$@" ;;
@@ -181,6 +182,7 @@ Subcommands:
   status    Show VM info
   console   Attach to the VM console (serial/VGA)
   shell     Open a shell inside the running VM via incus exec
+  template  List and inspect VM creation templates
   snapshot  Create, list, restore, and delete VM snapshots
   export    Publish VM as a reusable Incus image
   import    Create a VM from a published image or backup
@@ -217,25 +219,110 @@ _vm_parse_name() {
     VM_NAME="$name"
 }
 
+_imt_template_dir() {
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local d="${IMT_TEMPLATES_DIR:-}"
+    [[ -z "$d" ]] && d="${script_dir}/../templates"
+    [[ -d "$d" ]] && { realpath "$d" 2>/dev/null || echo "$d"; return; }
+    echo "${script_dir}/../templates"
+}
+
+_imt_tpl_get() {
+    local file="$1" key="$2"
+    grep "^${key}:" "${file}" | head -1 | sed "s/^${key}:[[:space:]]*//" | tr -d '"'
+}
+
+_imt_tpl_nested() {
+    local file="$1" section="$2" key="$3"
+    local in_section=false val=""
+    while IFS= read -r line; do
+        echo "${line}" | grep -q "^${section}:" && { in_section=true; continue; }
+        ${in_section} && echo "${line}" | grep -qE "^[a-z]" && break
+        if ${in_section}; then
+            local t; t=$(echo "${line}" | sed 's/^[[:space:]]*//')
+            echo "${t}" | grep -q "^${key}:" && {
+                val=$(echo "${t}" | sed "s/^${key}:[[:space:]]*//" | tr -d '"'); break; }
+        fi
+    done < "${file}"
+    echo "${val}"
+}
+
+cmd_vm_template() {
+    local subcmd="${1:-list}"; shift || true
+    local tpl_dir; tpl_dir="$(_imt_template_dir)"
+
+    case "${subcmd}" in
+        list|ls)
+            bold "VM Templates: ${tpl_dir}"
+            echo ""
+            printf "  %-14s %s\n" "NAME" "DESCRIPTION"
+            printf "  %-14s %s\n" "----" "-----------"
+            local found=false
+            for f in "${tpl_dir}"/*.yaml; do
+                [[ -f "$f" ]] || continue
+                found=true
+                local n desc
+                n=$(basename "$f" .yaml)
+                desc=$(_imt_tpl_get "$f" "description")
+                printf "  %-14s %s\n" "$n" "$desc"
+            done
+            ${found} || info "No templates found in ${tpl_dir}"
+            echo ""
+            info "Use: imt vm create --template <name> [options]"
+            ;;
+        show)
+            local name="${1:?Usage: imt vm template show <name>}"
+            local f="${tpl_dir}/${name}.yaml"
+            [[ -f "$f" ]] || die "Template not found: ${name}"
+            bold "Template: ${name}"
+            echo ""
+            echo "  Description : $(_imt_tpl_get "$f" "description")"
+            echo "  CPU         : $(_imt_tpl_nested "$f" "resources" "cpu")"
+            echo "  Memory      : $(_imt_tpl_nested "$f" "resources" "memory")"
+            ;;
+        help|--help|-h)
+            echo "Usage: imt vm template <list|show NAME>"
+            ;;
+        *) die "Unknown template subcommand: ${subcmd}" ;;
+    esac
+}
+
 cmd_vm_create() {
     local ram="${IMT_RAM:-4GiB}"
     local cpus="${IMT_CPUS:-4}"
     local version="${IMT_VERSION:-sonoma}"
     local name=""
+    local template=""
 
     # --disk is intentionally absent: disk size is baked into the QCOW2
     # image at build time (imt image build --size). Incus has no
     # limits.disk config key; size is set by the storage volume itself.
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --version) version="$2"; shift 2 ;;
-            --name)    name="$2";    shift 2 ;;
-            --ram)     ram="$2";     shift 2 ;;
-            --cpus)    cpus="$2";    shift 2 ;;
+            --version)  version="$2";  shift 2 ;;
+            --name)     name="$2";     shift 2 ;;
+            --ram)      ram="$2";      shift 2 ;;
+            --cpus)     cpus="$2";     shift 2 ;;
+            --template) template="$2"; shift 2 ;;
             *) die "Unknown option: $1" ;;
         esac
     done
     [[ -z "$name" ]] && name="macos-${version}"
+
+    # Apply template defaults (CLI flags already parsed above take precedence)
+    if [[ -n "${template}" ]]; then
+        local _tdir; _tdir="$(_imt_template_dir)"
+        local _tf="${_tdir}/${template}.yaml"
+        [[ -f "${_tf}" ]] || die "Template not found: ${template} (looked in ${_tdir})"
+        local _tcpu _tmem
+        _tcpu=$(_imt_tpl_nested "${_tf}" "resources" "cpu")
+        _tmem=$(_imt_tpl_nested "${_tf}" "resources" "memory")
+        # Only override if user didn't pass explicit --cpus / --ram
+        [[ -n "${_tcpu}" && "${cpus}" == "${IMT_CPUS:-4}" ]] && cpus="${_tcpu}"
+        [[ -n "${_tmem}" && "${ram}"  == "${IMT_RAM:-4GiB}" ]] && ram="${_tmem}"
+        info "Applying template '${template}': cpu=${cpus} ram=${ram}"
+    fi
 
     require_incus
 
