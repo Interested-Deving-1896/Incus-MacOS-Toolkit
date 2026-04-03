@@ -168,6 +168,7 @@ cmd_vm() {
         monitor)  cmd_vm_monitor  "$@" ;;
         net)      cmd_vm_net      "$@" ;;
         usb)      cmd_vm_usb      "$@" ;;
+        gpu)      cmd_vm_gpu      "$@" ;;
         template) cmd_vm_template "$@" ;;
         backup)   cmd_vm_backup  "$@" ;;
         restore)  cmd_vm_restore "$@" ;;
@@ -193,6 +194,7 @@ Subcommands:
   monitor   Show VM resource usage and stats
   net       Manage network port forwarding (proxy devices)
   usb       Manage USB device passthrough
+  gpu       Manage GPU passthrough
   backup    Export the VM and its storage volumes to a directory
   restore   Import a VM from a backup directory
   assemble  Create/update VMs from a declarative YAML file
@@ -1752,6 +1754,158 @@ Examples:
 EOF
             ;;
         *) die "Unknown net subcommand: ${subcmd}. Run: imt vm net help" ;;
+    esac
+}
+
+# ── GPU passthrough ───────────────────────────────────────────────────────────
+
+cmd_vm_gpu() {
+    local subcmd="${1:-help}"; shift || true
+
+    case "${subcmd}" in
+        list-host|host)
+            bold "GPUs available on host:"
+            echo ""
+            if incus info --resources >/dev/null 2>&1; then
+                incus info --resources 2>/dev/null | awk '
+                    /^  GPUs:/,/^  [A-Z][a-z]/ {
+                        if (!/^  GPUs:/ && !/^  [A-Z][a-z]/) print "  " $0
+                    }
+                '
+            else
+                warn "Could not retrieve GPU info from incus"
+            fi
+            if command -v lspci >/dev/null 2>&1; then
+                echo ""
+                info "PCI GPU devices:"
+                lspci 2>/dev/null | grep -iE "VGA|3D|Display|NVIDIA|AMD|Intel.*Graphics" \
+                | sed 's/^/  /' || info "  None found"
+            fi
+            ;;
+
+        attach|add)
+            local gpu_type="physical" pci_addr="" dev_name="gpu0" vendor=""
+            local version="${IMT_VERSION:-sonoma}" vm_name=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --type)     gpu_type="$2"; shift 2 ;;
+                    --pci)      pci_addr="$2"; shift 2 ;;
+                    --dev-name) dev_name="$2"; shift 2 ;;
+                    --vendor)   vendor="$2";   shift 2 ;;
+                    --version)  version="$2";  shift 2 ;;
+                    --name)     vm_name="$2";  shift 2 ;;
+                    *) die "Unknown option: $1" ;;
+                esac
+            done
+            [[ -z "${vm_name}" ]] && vm_name="macos-${version}"
+            require_incus
+            local device_args=("${vm_name}" "${dev_name}" gpu "gputype=${gpu_type}")
+            [[ -n "${pci_addr}" ]] && device_args+=("pci=${pci_addr}")
+            [[ -n "${vendor}" ]]   && device_args+=("vendorid=${vendor}")
+            info "Attaching GPU to '${vm_name}' (type=${gpu_type}${pci_addr:+, pci=${pci_addr}})"
+            incus config device add "${device_args[@]}"
+            ok "GPU attached: ${dev_name} → ${vm_name}"
+            info "  Type : ${gpu_type}"
+            [[ -n "${pci_addr}" ]] && info "  PCI  : ${pci_addr}"
+            ;;
+
+        detach|remove|rm)
+            local dev_name="${1:?Usage: imt vm gpu detach DEV_NAME [--name VM]}"
+            shift
+            local version="${IMT_VERSION:-sonoma}" vm_name=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --version) version="$2"; shift 2 ;;
+                    --name)    vm_name="$2"; shift 2 ;;
+                    *) die "Unknown option: $1" ;;
+                esac
+            done
+            [[ -z "${vm_name}" ]] && vm_name="macos-${version}"
+            require_incus
+            incus config device remove "${vm_name}" "${dev_name}"
+            ok "GPU removed: ${dev_name} from '${vm_name}'"
+            ;;
+
+        list|ls)
+            local version="${IMT_VERSION:-sonoma}" vm_name=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --version) version="$2"; shift 2 ;;
+                    --name)    vm_name="$2"; shift 2 ;;
+                    *) die "Unknown option: $1" ;;
+                esac
+            done
+            [[ -z "${vm_name}" ]] && vm_name="macos-${version}"
+            require_incus
+            bold "GPUs attached to '${vm_name}':"
+            echo ""
+            printf "  %-20s %-12s %s\n" "DEVICE" "TYPE" "PCI"
+            printf "  %-20s %-12s %s\n" "------" "----" "---"
+            local found=false
+            while IFS= read -r dev; do
+                [[ -n "${dev}" ]] || continue
+                local gtype pci
+                gtype=$(incus config device get "${vm_name}" "${dev}" gputype  2>/dev/null || echo "physical")
+                pci=$(incus config device get   "${vm_name}" "${dev}" pci      2>/dev/null || echo "")
+                found=true
+                printf "  %-20s %-12s %s\n" "${dev}" "${gtype}" "${pci}"
+            done < <(incus config device list "${vm_name}" 2>/dev/null | grep "gpu" | awk '{print $1}' || true)
+            ${found} || info "  No GPU devices attached"
+            ;;
+
+        status)
+            local version="${IMT_VERSION:-sonoma}" vm_name=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --version) version="$2"; shift 2 ;;
+                    --name)    vm_name="$2"; shift 2 ;;
+                    *) die "Unknown option: $1" ;;
+                esac
+            done
+            [[ -z "${vm_name}" ]] && vm_name="macos-${version}"
+            require_incus
+            bold "GPU status: ${vm_name}"
+            echo ""
+            cmd_vm_gpu list --name "${vm_name}"
+            echo ""
+            info "Host GPU resources:"
+            incus info --resources 2>/dev/null | awk '
+                /^  GPUs:/,/^  [A-Z][a-z]/ {
+                    if (!/^  GPUs:/ && !/^  [A-Z][a-z]/) print "  " $0
+                }
+            ' || true
+            ;;
+
+        help|--help|-h)
+            cat <<EOF
+Usage: imt vm gpu <subcommand> [--name VM] [options]
+
+Subcommands:
+  list-host              List GPUs available on the host
+  attach                 Attach a GPU to the VM
+  detach DEV_NAME        Remove a GPU from the VM
+  list                   List GPUs attached to the VM
+  status                 Show GPU status
+
+Attach options:
+  --type physical|mdev|mig|virtio   GPU type (default: physical)
+  --pci ADDR                        PCI address (e.g. 0000:01:00.0)
+  --dev-name NAME                   Device name (default: gpu0)
+  --vendor VENDOR                   GPU vendor filter
+
+Options:
+  --name VM       VM name (default: macos-<version>)
+  --version VER   macOS version (default: \${IMT_VERSION:-sonoma})
+
+Examples:
+  imt vm gpu list-host
+  imt vm gpu attach --name macos-sonoma
+  imt vm gpu attach --pci 0000:01:00.0 --type physical --name macos-sonoma
+  imt vm gpu list --name macos-sonoma
+  imt vm gpu detach gpu0 --name macos-sonoma
+EOF
+            ;;
+        *) die "Unknown gpu subcommand: ${subcmd}. Run: imt vm gpu help" ;;
     esac
 }
 
