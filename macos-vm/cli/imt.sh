@@ -984,6 +984,8 @@ cmd_vm_monitor() {
         stats)   _monitor_stats  "$@" ;;
         top)     _monitor_top    "$@" ;;
         disk)    _monitor_disk   "$@" ;;
+        uptime)  _monitor_uptime "$@" ;;
+        health)  _monitor_health ;;
         help|--help|-h)
             cat <<EOF
 Usage: imt vm monitor <subcommand> [--name VM]
@@ -993,16 +995,83 @@ Subcommands:
   stats  [--name VM]   CPU, memory, disk, and network stats
   top                  Live overview of all VMs (refreshes every 2s)
   disk   [--name VM]   Disk usage breakdown
+  uptime [--name VM]   VM uptime and creation history
+  health               Host-level health check
 
 Examples:
   imt vm monitor status --name macos-sonoma
   imt vm monitor stats  --name macos-sonoma
   imt vm monitor top
   imt vm monitor disk   --name macos-sonoma
+  imt vm monitor uptime --name macos-sonoma
+  imt vm monitor health
 EOF
             ;;
         *) die "Unknown monitor subcommand: ${subcmd}. Run: imt vm monitor help" ;;
     esac
+}
+
+_monitor_uptime() {
+    local vm_name
+    vm_name=$(_monitor_parse_name "$@")
+    require_incus
+    incus info "${vm_name}" &>/dev/null || die "VM '${vm_name}' not found"
+
+    local info_out status created last_used
+    info_out=$(incus info "${vm_name}" 2>/dev/null)
+    status=$(echo "${info_out}"    | grep "^Status:"    | awk '{print $2}')
+    created=$(echo "${info_out}"   | grep "^Created:"   | sed 's/^Created:[[:space:]]*//')
+    last_used=$(echo "${info_out}" | grep "^Last Used:" | sed 's/^Last Used:[[:space:]]*//')
+
+    bold "Uptime: ${vm_name}"
+    echo ""
+    echo "  Created   : ${created:-unknown}"
+    echo "  Last used : ${last_used:-unknown}"
+    echo "  Status    : ${status:-unknown}"
+
+    local snaps
+    snaps=$(echo "${info_out}" | grep -A1 "^Snapshots:" | tail -1 || true)
+    if [[ -n "${snaps}" && "${snaps}" != *"Snapshots:"* ]]; then
+        echo ""
+        info "Recent snapshots:"
+        echo "${info_out}" | sed -n '/^Snapshots:/,/^$/p' | tail -n +2 | head -5 | sed 's/^/  /'
+    fi
+}
+
+_monitor_health() {
+    bold "imt System Health"
+    echo ""
+
+    if incus info >/dev/null 2>&1; then
+        ok "Incus daemon: reachable"
+    else
+        err "Incus daemon: not reachable"
+    fi
+
+    if [[ -e /dev/kvm ]]; then
+        ok "KVM: available"
+    else
+        warn "KVM: /dev/kvm not found"
+    fi
+
+    local pools networks vm_total vm_running
+    pools=$(incus storage list --format csv 2>/dev/null | wc -l || echo "0")
+    networks=$(incus network list --format csv 2>/dev/null | wc -l || echo "0")
+    vm_total=$(incus list --format csv -c t 2>/dev/null | grep -c "virtual-machine" || echo "0")
+    vm_running=$(incus list --format csv -c s,t 2>/dev/null | grep "RUNNING,virtual-machine" | wc -l || echo "0")
+    echo "  Storage pools : ${pools}"
+    echo "  Networks      : ${networks}"
+    echo "  VMs           : ${vm_running} running / ${vm_total} total"
+
+    echo ""
+    info "Host disk:"
+    df -h / 2>/dev/null | tail -1 | awk '{printf "  Used: %s / %s (%s)\n", $3, $2, $5}'
+
+    info "Host memory:"
+    free -h 2>/dev/null | grep "^Mem:" | awk '{printf "  Used: %s / %s\n", $3, $2}' || true
+
+    echo ""
+    ok "Health check complete"
 }
 
 _monitor_parse_name() {
