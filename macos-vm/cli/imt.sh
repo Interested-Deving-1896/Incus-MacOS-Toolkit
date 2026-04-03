@@ -397,15 +397,22 @@ cmd_vm_snapshot() {
         list|ls) _cmd_vm_snapshot_list   "$@" ;;
         restore) _cmd_vm_snapshot_restore "$@" ;;
         delete|rm|remove) _cmd_vm_snapshot_delete "$@" ;;
+        auto)    _cmd_vm_snapshot_auto   "$@" ;;
         help|--help|-h)
             cat <<EOF
 Usage: imt vm snapshot <subcommand> [options]
 
 Subcommands:
-  create  [NAME] [--name VM]   Take a snapshot (default name: snap-<timestamp>)
-  list           [--name VM]   List all snapshots
-  restore NAME   [--name VM]   Restore to a snapshot
-  delete  NAME   [--name VM]   Delete a snapshot
+  create  [NAME] [--name VM]                    Take a snapshot
+  list           [--name VM]                    List all snapshots
+  restore NAME   [--name VM]                    Restore to a snapshot
+  delete  NAME   [--name VM]                    Delete a snapshot
+  auto    <set|show|disable> [--name VM]        Manage auto-snapshot schedule
+
+Auto subcommands:
+  auto set SCHEDULE [--expiry DURATION] [--pattern PATTERN]
+  auto show
+  auto disable
 
 Examples:
   imt vm snapshot create --name macos-sonoma
@@ -413,11 +420,90 @@ Examples:
   imt vm snapshot list --name macos-sonoma
   imt vm snapshot restore before-update --name macos-sonoma
   imt vm snapshot delete before-update --name macos-sonoma
+  imt vm snapshot auto set "@daily" --expiry 7d --name macos-sonoma
+  imt vm snapshot auto show --name macos-sonoma
+  imt vm snapshot auto disable --name macos-sonoma
 EOF
             ;;
         # Legacy: bare 'imt vm snapshot' with no subcommand → create
         *)
             _cmd_vm_snapshot_create "${subcmd}" "$@" ;;
+    esac
+}
+
+_cmd_vm_snapshot_auto() {
+    local subcmd="${1:-help}"
+    shift || true
+
+    case "${subcmd}" in
+        set)
+            local schedule="${1:?Usage: imt vm snapshot auto set <schedule> [--expiry DURATION] [--pattern PATTERN] [--name VM]}"
+            shift
+            local expiry="" pattern="snap-%d" version="${IMT_VERSION:-sonoma}" vm_name=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --expiry)  expiry="$2";  shift 2 ;;
+                    --pattern) pattern="$2"; shift 2 ;;
+                    --version) version="$2"; shift 2 ;;
+                    --name)    vm_name="$2"; shift 2 ;;
+                    *) die "Unknown option: $1" ;;
+                esac
+            done
+            [[ -z "${vm_name}" ]] && vm_name="macos-${version}"
+            require_incus
+            info "Setting snapshot schedule for '${vm_name}': ${schedule}"
+            incus config set "${vm_name}" snapshots.schedule "${schedule}"
+            incus config set "${vm_name}" snapshots.pattern  "${pattern}"
+            incus config set "${vm_name}" snapshots.schedule.stopped false
+            if [[ -n "${expiry}" ]]; then
+                info "Setting snapshot expiry: ${expiry}"
+                incus config set "${vm_name}" snapshots.expiry "${expiry}"
+            fi
+            ok "Auto-snapshot configured for '${vm_name}'"
+            info "  Schedule : ${schedule}"
+            info "  Pattern  : ${pattern}"
+            [[ -n "${expiry}" ]] && info "  Expiry   : ${expiry}"
+            ;;
+        show)
+            local version="${IMT_VERSION:-sonoma}" vm_name=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --version) version="$2"; shift 2 ;;
+                    --name)    vm_name="$2"; shift 2 ;;
+                    *) die "Unknown option: $1" ;;
+                esac
+            done
+            [[ -z "${vm_name}" ]] && vm_name="macos-${version}"
+            require_incus
+            local schedule expiry pattern
+            schedule=$(incus config get "${vm_name}" snapshots.schedule 2>/dev/null || echo "(not set)")
+            expiry=$(incus config get   "${vm_name}" snapshots.expiry   2>/dev/null || echo "(not set)")
+            pattern=$(incus config get  "${vm_name}" snapshots.pattern  2>/dev/null || echo "(not set)")
+            printf "VM       : %s\n" "${vm_name}"
+            printf "Schedule : %s\n" "${schedule}"
+            printf "Expiry   : %s\n" "${expiry}"
+            printf "Pattern  : %s\n" "${pattern}"
+            ;;
+        disable)
+            local version="${IMT_VERSION:-sonoma}" vm_name=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --version) version="$2"; shift 2 ;;
+                    --name)    vm_name="$2"; shift 2 ;;
+                    *) die "Unknown option: $1" ;;
+                esac
+            done
+            [[ -z "${vm_name}" ]] && vm_name="macos-${version}"
+            require_incus
+            incus config unset "${vm_name}" snapshots.schedule 2>/dev/null || true
+            ok "Auto-snapshot disabled for '${vm_name}'"
+            ;;
+        help|--help|-h)
+            echo "Usage: imt vm snapshot auto <set|show|disable> [options]"
+            echo "Run 'imt vm snapshot --help' for details."
+            ;;
+        *)
+            die "Unknown auto subcommand: ${subcmd}" ;;
     esac
 }
 
