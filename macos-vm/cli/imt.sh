@@ -24,6 +24,7 @@ fi
 
 export IMT_ROOT
 
+# shellcheck source=cli/lib.sh disable=SC1091
 source "$IMT_ROOT/cli/lib.sh"
 load_config
 
@@ -199,7 +200,6 @@ _vm_parse_name() {
     done
     [[ -z "$name" ]] && name="macos-${version}"
     VM_NAME="$name"
-    VM_VERSION="$version"
 }
 
 cmd_vm_create() {
@@ -286,6 +286,7 @@ cmd_vm_create() {
         --profile macos-kvm \
         --config limits.cpu="$cpus" \
         --config limits.memory="$ram" \
+        --config limits.disk="$disk" \
         --config security.secureboot=false \
         "$name"
 

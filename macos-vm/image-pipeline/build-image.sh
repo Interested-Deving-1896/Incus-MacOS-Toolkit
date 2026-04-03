@@ -23,6 +23,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMT_ROOT="$(dirname "$SCRIPT_DIR")"
+# shellcheck source=cli/lib.sh disable=SC1091
 source "$IMT_ROOT/cli/lib.sh"
 
 load_config
