@@ -167,6 +167,7 @@ cmd_vm() {
         fleet)    cmd_vm_fleet    "$@" ;;
         monitor)  cmd_vm_monitor  "$@" ;;
         net)      cmd_vm_net      "$@" ;;
+        usb)      cmd_vm_usb      "$@" ;;
         template) cmd_vm_template "$@" ;;
         backup)   cmd_vm_backup  "$@" ;;
         restore)  cmd_vm_restore "$@" ;;
@@ -191,6 +192,7 @@ Subcommands:
   fleet     Multi-VM orchestration (start-all, stop-all, backup-all)
   monitor   Show VM resource usage and stats
   net       Manage network port forwarding (proxy devices)
+  usb       Manage USB device passthrough
   backup    Export the VM and its storage volumes to a directory
   restore   Import a VM from a backup directory
   assemble  Create/update VMs from a declarative YAML file
@@ -1750,6 +1752,123 @@ Examples:
 EOF
             ;;
         *) die "Unknown net subcommand: ${subcmd}. Run: imt vm net help" ;;
+    esac
+}
+
+# ── USB passthrough ───────────────────────────────────────────────────────────
+
+cmd_vm_usb() {
+    local subcmd="${1:-help}"; shift || true
+
+    case "${subcmd}" in
+        list-host|host)
+            bold "USB devices on host:"
+            echo ""
+            if command -v lsusb >/dev/null 2>&1; then
+                printf "  %-12s %s\n" "VENDOR:ID" "DESCRIPTION"
+                printf "  %-12s %s\n" "---------" "-----------"
+                lsusb | while IFS= read -r line; do
+                    local vid pid desc
+                    vid=$(echo "${line}" | awk '{print $6}' | cut -d: -f1)
+                    pid=$(echo "${line}" | awk '{print $6}' | cut -d: -f2)
+                    desc=$(echo "${line}" | cut -d: -f3- | sed 's/^ //')
+                    printf "  %-12s %s\n" "${vid}:${pid}" "${desc}"
+                done
+            else
+                warn "lsusb not found — install usbutils"
+            fi
+            ;;
+
+        attach|add)
+            local vid="${1:?Usage: imt vm usb attach VID PID [--name VM]}"
+            local pid="${2:?Usage: imt vm usb attach VID PID [--name VM]}"
+            shift 2
+            local dev_name="" version="${IMT_VERSION:-sonoma}" vm_name=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --dev-name) dev_name="$2"; shift 2 ;;
+                    --version)  version="$2";  shift 2 ;;
+                    --name)     vm_name="$2";  shift 2 ;;
+                    *) die "Unknown option: $1" ;;
+                esac
+            done
+            [[ -z "${vm_name}" ]] && vm_name="macos-${version}"
+            [[ -z "${dev_name}" ]] && dev_name="usb-${vid}-${pid}"
+            require_incus
+            info "Attaching USB ${vid}:${pid} to '${vm_name}' as '${dev_name}'"
+            incus config device add "${vm_name}" "${dev_name}" usb \
+                "vendorid=${vid}" "productid=${pid}"
+            ok "USB device attached: ${dev_name} (${vid}:${pid}) → ${vm_name}"
+            ;;
+
+        detach|remove|rm)
+            local dev_name="${1:?Usage: imt vm usb detach DEV_NAME [--name VM]}"
+            shift
+            local version="${IMT_VERSION:-sonoma}" vm_name=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --version) version="$2"; shift 2 ;;
+                    --name)    vm_name="$2"; shift 2 ;;
+                    *) die "Unknown option: $1" ;;
+                esac
+            done
+            [[ -z "${vm_name}" ]] && vm_name="macos-${version}"
+            require_incus
+            incus config device remove "${vm_name}" "${dev_name}"
+            ok "USB device removed: ${dev_name} from '${vm_name}'"
+            ;;
+
+        list|ls)
+            local version="${IMT_VERSION:-sonoma}" vm_name=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --version) version="$2"; shift 2 ;;
+                    --name)    vm_name="$2"; shift 2 ;;
+                    *) die "Unknown option: $1" ;;
+                esac
+            done
+            [[ -z "${vm_name}" ]] && vm_name="macos-${version}"
+            require_incus
+            bold "USB devices attached to '${vm_name}':"
+            echo ""
+            printf "  %-20s %-10s %s\n" "DEVICE" "VENDOR" "PRODUCT"
+            printf "  %-20s %-10s %s\n" "------" "------" "-------"
+            local found=false
+            while IFS= read -r dev; do
+                [[ -n "${dev}" ]] || continue
+                local vid pid
+                vid=$(incus config device get "${vm_name}" "${dev}" vendorid  2>/dev/null || echo "")
+                pid=$(incus config device get "${vm_name}" "${dev}" productid 2>/dev/null || echo "")
+                [[ -n "${vid}" ]] || continue
+                found=true
+                printf "  %-20s %-10s %s\n" "${dev}" "${vid}" "${pid}"
+            done < <(incus config device list "${vm_name}" 2>/dev/null | grep "usb" | awk '{print $1}' || true)
+            ${found} || info "  No USB devices attached"
+            ;;
+
+        help|--help|-h)
+            cat <<EOF
+Usage: imt vm usb <subcommand> [--name VM] [options]
+
+Subcommands:
+  list-host              List USB devices available on the host
+  attach VID PID         Attach a USB device to the VM
+  detach DEV_NAME        Remove a USB device from the VM
+  list                   List USB devices attached to the VM
+
+Options:
+  --name VM       VM name (default: macos-<version>)
+  --version VER   macOS version (default: \${IMT_VERSION:-sonoma})
+  --dev-name NAME Custom device name for attach (default: usb-<VID>-<PID>)
+
+Examples:
+  imt vm usb list-host
+  imt vm usb attach 046d c52b --name macos-sonoma
+  imt vm usb list --name macos-sonoma
+  imt vm usb detach usb-046d-c52b --name macos-sonoma
+EOF
+            ;;
+        *) die "Unknown usb subcommand: ${subcmd}. Run: imt vm usb help" ;;
     esac
 }
 
