@@ -826,7 +826,7 @@ _fleet_start_all() {
     while IFS= read -r vm; do
         [[ -n "${vm}" ]] || continue
         info "Starting: ${vm}"
-        incus start "${vm}" && ok "  Started: ${vm}" || warn "  Failed: ${vm}"
+        if incus start "${vm}"; then ok "  Started: ${vm}"; else warn "  Failed: ${vm}"; fi
         count=$((count+1))
     done <<< "${vms}"
     ok "Started ${count} VM(s)"
@@ -842,9 +842,9 @@ _fleet_stop_all() {
         [[ -n "${vm}" ]] || continue
         info "Stopping: ${vm}"
         if [[ "${force}" == true ]]; then
-            incus stop "${vm}" --force && ok "  Stopped: ${vm}" || warn "  Failed: ${vm}"
+            if incus stop "${vm}" --force; then ok "  Stopped: ${vm}"; else warn "  Failed: ${vm}"; fi
         else
-            incus stop "${vm}" && ok "  Stopped: ${vm}" || warn "  Failed: ${vm}"
+            if incus stop "${vm}"; then ok "  Stopped: ${vm}"; else warn "  Failed: ${vm}"; fi
         fi
         count=$((count+1))
     done <<< "${vms}"
