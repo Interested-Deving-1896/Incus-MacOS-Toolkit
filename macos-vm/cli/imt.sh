@@ -247,8 +247,9 @@ _imt_tpl_nested() {
         echo "${line}" | grep -q "^${section}:" && { in_section=true; continue; }
         ${in_section} && echo "${line}" | grep -qE "^[a-z]" && break
         if ${in_section}; then
-            local t; t=$(echo "${line}" | sed 's/^[[:space:]]*//')
+            local t="${line#"${line%%[^[:space:]]*}"}"; t="${t%%[[:space:]]}"
             echo "${t}" | grep -q "^${key}:" && {
+                # shellcheck disable=SC2001  # variable in sed pattern; ${//} cannot replicate
                 val=$(echo "${t}" | sed "s/^${key}:[[:space:]]*//" | tr -d '"'); break; }
         fi
     done < "${file}"
@@ -1152,7 +1153,7 @@ _monitor_health() {
     pools=$(incus storage list --format csv 2>/dev/null | wc -l || echo "0")
     networks=$(incus network list --format csv 2>/dev/null | wc -l || echo "0")
     vm_total=$(incus list --format csv -c t 2>/dev/null | grep -c "virtual-machine" || echo "0")
-    vm_running=$(incus list --format csv -c s,t 2>/dev/null | grep "RUNNING,virtual-machine" | wc -l || echo "0")
+    vm_running=$(incus list --format csv -c s,t 2>/dev/null | grep -c "RUNNING,virtual-machine" || echo "0")
     echo "  Storage pools : ${pools}"
     echo "  Networks      : ${networks}"
     echo "  VMs           : ${vm_running} running / ${vm_total} total"
