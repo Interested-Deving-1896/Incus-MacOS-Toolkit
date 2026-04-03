@@ -947,7 +947,7 @@ _fleet_backup_all() {
     while IFS= read -r vm; do
         [[ -n "${vm}" ]] || continue
         info "Backing up: ${vm}"
-        if cmd_vm_backup --name "${vm}"; then
+        if _cmd_vm_backup_create --name "${vm}"; then
             count=$((count+1))
         else
             warn "  Failed: ${vm}"
@@ -1212,21 +1212,60 @@ _monitor_disk() {
     done
 }
 
+_IMT_BACKUP_STORE="${IMT_BACKUP_STORE:-${HOME}/.local/share/imt/vm-backups}"
+
 cmd_vm_backup() {
+    local subcmd="${1:-create}"
+    # If first arg looks like an option or is absent, treat as 'create'
+    [[ "${subcmd}" == -* ]] && subcmd="create"
+    case "${subcmd}" in
+        create|list|ls|delete|rm|help|--help|-h) shift || true ;;
+        *) subcmd="create" ;;
+    esac
+
+    case "${subcmd}" in
+        create)  _cmd_vm_backup_create "$@" ;;
+        list|ls) _cmd_vm_backup_list ;;
+        delete|rm) _cmd_vm_backup_delete "$@" ;;
+        help|--help|-h)
+            cat <<EOF
+Usage: imt vm backup <subcommand> [options]
+
+Subcommands:
+  create [options]    Back up a VM and its storage volumes
+  list                List available local backups
+  delete NAME         Delete a local backup directory
+
+Create options:
+  --name VM           VM name (default: macos-<version>)
+  --version VER       macOS version (default: \${IMT_VERSION:-sonoma})
+  --output|-o DIR     Output directory (default: auto-named in \$IMT_BACKUP_STORE)
+
+Backup store: \${IMT_BACKUP_STORE:-~/.local/share/imt/vm-backups}
+EOF
+            ;;
+        *) die "Unknown backup subcommand: ${subcmd}. Run: imt vm backup help" ;;
+    esac
+}
+
+_cmd_vm_backup_create() {
     local output_dir=""
     local version="${IMT_VERSION:-sonoma}"
     local name=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --version)  version="$2";     shift 2 ;;
-            --name)     name="$2";        shift 2 ;;
+            --version)   version="$2";    shift 2 ;;
+            --name)      name="$2";       shift 2 ;;
             --output|-o) output_dir="$2"; shift 2 ;;
             *) die "Unknown option: $1" ;;
         esac
     done
     [[ -z "$name" ]] && name="macos-${version}"
-    [[ -z "$output_dir" ]] && output_dir="${name}-backup-$(date +%Y%m%d-%H%M%S)"
+    if [[ -z "$output_dir" ]]; then
+        mkdir -p "${_IMT_BACKUP_STORE}"
+        output_dir="${_IMT_BACKUP_STORE}/${name}-backup-$(date +%Y%m%d-%H%M%S)"
+    fi
 
     require_incus
 
@@ -1256,6 +1295,50 @@ cmd_vm_backup() {
     echo ""
     bold "To restore:"
     echo "  imt vm restore --name $name --from $output_dir"
+}
+
+_cmd_vm_backup_list() {
+    mkdir -p "${_IMT_BACKUP_STORE}"
+    bold "VM Backups: ${_IMT_BACKUP_STORE}"
+    echo ""
+    printf "  %-40s %-12s %s\n" "NAME" "SIZE" "DATE"
+    printf "  %-40s %-12s %s\n" "----" "----" "----"
+
+    local found=false
+    for d in "${_IMT_BACKUP_STORE}"/*/; do
+        [[ -d "$d" ]] || continue
+        found=true
+        local bname size date_str
+        bname="$(basename "$d")"
+        size="$(du -sh "$d" 2>/dev/null | awk '{print $1}' || echo "?")"
+        date_str="$(stat -c%y "$d" 2>/dev/null | cut -d. -f1 || stat -f%Sm "$d" 2>/dev/null || echo "unknown")"
+        printf "  %-40s %-12s %s\n" "$bname" "$size" "$date_str"
+    done
+
+    if [[ "$found" == false ]]; then
+        info "  No backups found in ${_IMT_BACKUP_STORE}"
+    fi
+    echo ""
+    info "Backup store: ${_IMT_BACKUP_STORE}"
+}
+
+_cmd_vm_backup_delete() {
+    local backup_name=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help|-h) cmd_vm_backup help; return ;;
+            -*) die "Unknown option: $1" ;;
+            *) backup_name="$1"; shift ;;
+        esac
+    done
+    [[ -n "$backup_name" ]] || die "Backup name required. Usage: imt vm backup delete <name>"
+
+    local backup_path="${_IMT_BACKUP_STORE}/${backup_name}"
+    [[ -d "$backup_path" ]] || die "Backup not found: ${backup_path}"
+
+    info "Deleting backup: $backup_name"
+    rm -rf "$backup_path"
+    ok "Backup deleted: $backup_name"
 }
 
 cmd_vm_restore() {
