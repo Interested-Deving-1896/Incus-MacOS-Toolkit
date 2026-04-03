@@ -2428,9 +2428,11 @@ EOF
             mkdir -p "${_demo_dir}"
             ( cd "${_demo_dir}" && "${_demo_bin}" >> "${_demo_log}" 2>&1 & echo $! > "${_demo_pid}" )
             sleep 1
-            _demo_running \
-                && ok "Demo server started (PID $(cat "${_demo_pid}")) — ${_demo_url}" \
-                || die "Failed to start. Check: imt demo logs"
+            if _demo_running; then
+                ok "Demo server started (PID $(cat "${_demo_pid}")) — ${_demo_url}"
+            else
+                die "Failed to start. Check: imt demo logs"
+            fi
             ;;
         stop)
             _demo_running || { info "Not running"; return 0; }
@@ -2449,8 +2451,11 @@ EOF
             ;;
         logs)
             [ -f "${_demo_log}" ] || die "No log file: ${_demo_log}"
-            [[ "${1:-}" == "--follow" || "${1:-}" == "-f" ]] \
-                && tail -f "${_demo_log}" || cat "${_demo_log}"
+            if [[ "${1:-}" == "--follow" || "${1:-}" == "-f" ]]; then
+                tail -f "${_demo_log}"
+            else
+                cat "${_demo_log}"
+            fi
             ;;
         url)  printf '%s\n' "${_demo_url}" ;;
         test)
