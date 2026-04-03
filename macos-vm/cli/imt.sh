@@ -166,6 +166,7 @@ cmd_vm() {
         import)   cmd_vm_import  "$@" ;;
         fleet)    cmd_vm_fleet    "$@" ;;
         monitor)  cmd_vm_monitor  "$@" ;;
+        net)      cmd_vm_net      "$@" ;;
         template) cmd_vm_template "$@" ;;
         backup)   cmd_vm_backup  "$@" ;;
         restore)  cmd_vm_restore "$@" ;;
@@ -189,6 +190,7 @@ Subcommands:
   import    Create a VM from a published image or backup
   fleet     Multi-VM orchestration (start-all, stop-all, backup-all)
   monitor   Show VM resource usage and stats
+  net       Manage network port forwarding (proxy devices)
   backup    Export the VM and its storage volumes to a directory
   restore   Import a VM from a backup directory
   assemble  Create/update VMs from a declarative YAML file
@@ -1614,6 +1616,141 @@ cmd_config() {
 
 cmd_version() {
     echo "imt $VERSION"
+}
+
+# ── Net / port forwarding ─────────────────────────────────────────────────────
+
+cmd_vm_net() {
+    local subcmd="${1:-help}"; shift || true
+
+    case "${subcmd}" in
+        forward|fwd)
+            local host_port="${1:?Usage: imt vm net forward HOST_PORT [CONTAINER_PORT] [--proto tcp|udp] [--name VM]}"
+            shift
+            local container_port="${host_port}"
+            local proto="tcp"
+            local listen_addr="0.0.0.0"
+            local proxy_name=""
+            local version="${IMT_VERSION:-sonoma}" vm_name=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --proto)   proto="$2";        shift 2 ;;
+                    --listen)  listen_addr="$2";  shift 2 ;;
+                    --proxy)   proxy_name="$2";   shift 2 ;;
+                    --version) version="$2";      shift 2 ;;
+                    --name)    vm_name="$2";       shift 2 ;;
+                    -*) die "Unknown option: $1" ;;
+                    *)  container_port="$1";      shift ;;
+                esac
+            done
+            [[ -z "${vm_name}" ]] && vm_name="macos-${version}"
+            [[ -z "${proxy_name}" ]] && proxy_name="fwd-${host_port}"
+            require_incus
+            info "Adding port forward: ${listen_addr}:${host_port} → ${vm_name}:${container_port} (${proto})"
+            incus config device add "${vm_name}" "${proxy_name}" proxy \
+                "listen=${proto}:${listen_addr}:${host_port}" \
+                "connect=${proto}:127.0.0.1:${container_port}"
+            ok "Port forward added: ${proxy_name}"
+            info "  Host     : ${listen_addr}:${host_port}"
+            info "  VM       : 127.0.0.1:${container_port}"
+            ;;
+
+        unforward|unfwd|rm)
+            local proxy_name="${1:?Usage: imt vm net unforward PROXY_NAME [--name VM]}"
+            shift
+            local version="${IMT_VERSION:-sonoma}" vm_name=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --version) version="$2"; shift 2 ;;
+                    --name)    vm_name="$2"; shift 2 ;;
+                    *) die "Unknown option: $1" ;;
+                esac
+            done
+            [[ -z "${vm_name}" ]] && vm_name="macos-${version}"
+            require_incus
+            incus config device remove "${vm_name}" "${proxy_name}"
+            ok "Removed port forward: ${proxy_name}"
+            ;;
+
+        list|ls)
+            local version="${IMT_VERSION:-sonoma}" vm_name=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --version) version="$2"; shift 2 ;;
+                    --name)    vm_name="$2"; shift 2 ;;
+                    *) die "Unknown option: $1" ;;
+                esac
+            done
+            [[ -z "${vm_name}" ]] && vm_name="macos-${version}"
+            require_incus
+            bold "Port forwards: ${vm_name}"
+            echo ""
+            printf "  %-20s %-30s %s\n" "DEVICE" "LISTEN" "CONNECT"
+            printf "  %-20s %-30s %s\n" "------" "------" "-------"
+            local found=false
+            while IFS= read -r dev; do
+                [[ -n "${dev}" ]] || continue
+                local listen connect
+                listen=$(incus config device get "${vm_name}" "${dev}" listen 2>/dev/null || echo "")
+                connect=$(incus config device get "${vm_name}" "${dev}" connect 2>/dev/null || echo "")
+                [[ -n "${listen}" ]] || continue
+                found=true
+                printf "  %-20s %-30s %s\n" "${dev}" "${listen}" "${connect}"
+            done < <(incus config device list "${vm_name}" 2>/dev/null | grep "proxy" | awk '{print $1}' || true)
+            ${found} || info "  No port forwards configured"
+            ;;
+
+        status)
+            local version="${IMT_VERSION:-sonoma}" vm_name=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --version) version="$2"; shift 2 ;;
+                    --name)    vm_name="$2"; shift 2 ;;
+                    *) die "Unknown option: $1" ;;
+                esac
+            done
+            [[ -z "${vm_name}" ]] && vm_name="macos-${version}"
+            require_incus
+            bold "Network status: ${vm_name}"
+            echo ""
+            incus info "${vm_name}" 2>/dev/null | awk '
+                /^Network usage:/ { in_net=1; next }
+                in_net && /^[A-Z]/ { in_net=0 }
+                in_net { print "  " $0 }
+            '
+            echo ""
+            info "Proxy devices:"
+            incus config device show "${vm_name}" 2>/dev/null \
+            | awk '/type: proxy/{found=1} found{print "  " $0; if(/^$/)found=0}' \
+            || info "  None"
+            ;;
+
+        help|--help|-h)
+            cat <<EOF
+Usage: imt vm net <subcommand> [--name VM] [options]
+
+Subcommands:
+  forward HOST_PORT [CONTAINER_PORT]   Add a port forward proxy device
+  unforward PROXY_NAME                 Remove a port forward
+  list                                 List all port forwards
+  status                               Show network interfaces and forwards
+
+Options:
+  --name VM       VM name (default: macos-<version>)
+  --version VER   macOS version (default: \${IMT_VERSION:-sonoma})
+  --proto tcp|udp Protocol (default: tcp)
+  --listen ADDR   Listen address (default: 0.0.0.0)
+
+Examples:
+  imt vm net forward 8080 --name macos-sonoma
+  imt vm net forward 8080 80 --proto tcp --name macos-sonoma
+  imt vm net list --name macos-sonoma
+  imt vm net unforward fwd-8080 --name macos-sonoma
+  imt vm net status --name macos-sonoma
+EOF
+            ;;
+        *) die "Unknown net subcommand: ${subcmd}. Run: imt vm net help" ;;
+    esac
 }
 
 # ── Cloud sync ────────────────────────────────────────────────────────────────
