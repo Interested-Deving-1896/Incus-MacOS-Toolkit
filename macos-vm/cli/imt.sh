@@ -43,6 +43,7 @@ Commands:
   image       Manage macOS disk images (fetch, build)
   vm          Manage macOS VMs in Incus (create, start, stop, backup, restore, ...)
   cloud-sync  Sync VM backups to cloud storage via rclone
+  update      Check for and install imt updates
   doctor      Check prerequisites
   config      Show or initialise configuration
   version     Print version
@@ -1814,6 +1815,122 @@ EOF
     esac
 }
 
+# ── Self-update ───────────────────────────────────────────────────────────────
+
+_IMT_GITHUB_REPO="Interested-Deving-1896/Incus-MacOS-Toolkit"
+_IMT_GITHUB_API="https://api.github.com/repos/${_IMT_GITHUB_REPO}/releases/latest"
+_IMT_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_IMT_ROOT="$(cd "${_IMT_SCRIPT_DIR}/.." && pwd)"
+
+_imt_version_gt() {
+    local v1="${1#v}" v2="${2#v}"
+    local IFS=.
+    # shellcheck disable=SC2206
+    local a1=($v1) a2=($v2)
+    local i
+    for i in 0 1 2; do
+        local n1="${a1[$i]:-0}" n2="${a2[$i]:-0}"
+        [[ "$n1" -gt "$n2" ]] && return 0
+        [[ "$n1" -lt "$n2" ]] && return 1
+    done
+    return 1
+}
+
+_imt_fetch_release() {
+    curl --disable --silent --fail \
+        -H "Accept: application/vnd.github.v3+json" \
+        "${_IMT_GITHUB_API}" 2>/dev/null \
+    || { warn "Could not reach GitHub API"; return 1; }
+}
+
+cmd_update() {
+    local subcmd="${1:-check}"; shift || true
+
+    case "${subcmd}" in
+        check)
+            local current="${VERSION}"
+            info "Current version : v${current}"
+            info "Checking GitHub for updates..."
+
+            local release_json latest_tag latest
+            release_json=$(_imt_fetch_release) || {
+                info "Check manually: https://github.com/${_IMT_GITHUB_REPO}/releases"
+                return 1
+            }
+            latest_tag=$(echo "${release_json}" | grep '"tag_name"' | head -1 \
+                         | sed 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/')
+            latest="${latest_tag#v}"
+            [[ -n "${latest}" ]] || { warn "Could not determine latest version"; return 1; }
+            info "Latest version  : v${latest}"
+
+            if _imt_version_gt "${latest}" "${current}"; then
+                echo ""
+                ok "Update available: v${current} → v${latest}"
+                info "Update with: imt update install"
+            else
+                ok "imt is up to date (v${current})"
+            fi
+            ;;
+
+        install|upgrade)
+            local current="${VERSION}"
+            info "Current version : v${current}"
+            info "Fetching latest release..."
+
+            local release_json latest_tag latest tarball_url
+            release_json=$(_imt_fetch_release) || die "Could not reach GitHub API"
+            latest_tag=$(echo "${release_json}" | grep '"tag_name"' | head -1 \
+                         | sed 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/')
+            latest="${latest_tag#v}"
+            [[ -n "${latest}" ]] || die "Could not determine latest version"
+
+            if ! _imt_version_gt "${latest}" "${current}"; then
+                ok "Already up to date (v${current})"
+                return 0
+            fi
+
+            info "Updating: v${current} → v${latest}"
+            tarball_url=$(echo "${release_json}" | grep '"tarball_url"' | head -1 \
+                          | sed 's/.*"tarball_url":[[:space:]]*"\([^"]*\)".*/\1/')
+            [[ -n "${tarball_url}" ]] || die "No tarball URL in release"
+
+            if [[ -d "${_IMT_ROOT}/.git" ]]; then
+                info "Git repository detected — pulling latest..."
+                ( cd "${_IMT_ROOT}" && git fetch origin \
+                  && git checkout "v${latest}" 2>/dev/null \
+                  || git pull origin main ) || die "Git pull failed"
+                ok "Updated via git to v${latest}"
+            else
+                local tmp_dir; tmp_dir=$(mktemp -d)
+                info "Downloading v${latest}..."
+                curl --disable --silent --location --fail \
+                    --output "${tmp_dir}/imt-${latest}.tar.gz" "${tarball_url}" \
+                    || die "Download failed"
+                info "Extracting..."
+                tar xzf "${tmp_dir}/imt-${latest}.tar.gz" -C "${tmp_dir}" --strip-components=1
+                info "Installing..."
+                ( cd "${tmp_dir}" && bash macos-vm/install 2>/dev/null \
+                  || cp -r . "${_IMT_ROOT}/" ) || die "Install failed"
+                rm -rf "${tmp_dir}"
+                ok "Updated to v${latest}"
+            fi
+            ;;
+
+        help|--help|-h)
+            cat <<EOF
+imt update — check for and install imt updates
+
+Usage: imt update [check|install]
+
+Subcommands:
+  check     Check for a newer version (default)
+  install   Download and install the latest version
+EOF
+            ;;
+        *) die "Unknown update subcommand: ${subcmd}" ;;
+    esac
+}
+
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
 main() {
@@ -1822,6 +1939,7 @@ main() {
         image)          cmd_image      "$@" ;;
         vm)             cmd_vm         "$@" ;;
         cloud-sync)     cmd_cloud_sync "$@" ;;
+        update)         cmd_update     "$@" ;;
         doctor)         cmd_doctor     "$@" ;;
         config)         cmd_config     "$@" ;;
         version|--version) cmd_version ;;
