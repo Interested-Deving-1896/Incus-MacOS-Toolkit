@@ -4,31 +4,34 @@
 [![Built with Ona](https://ona.com/build-with-ona.svg)](https://app.ona.com/#https://github.com/Interested-Deving-1896/Incus-MacOS-Toolkit)
 
 <!-- AI:start:what-it-does -->
-This project provides a unified toolkit for macOS users requiring advanced virtualization, filesystem interoperability, and storage solutions. It enables macOS KVM virtualization, access to Linux filesystems on macOS, compatibility tools for cross-platform workflows, and a hybrid BTRFS+DwarFS storage framework. It is designed for developers and system administrators working across macOS and Linux environments.
+This project provides a unified toolkit for macOS users to address cross-platform compatibility and virtualization needs. It enables macOS KVM virtualization using QEMU, facilitates access to Linux filesystems on macOS and Windows, offers compatibility tools for macOS and Linux interoperability, and implements a hybrid BTRFS+DwarFS storage framework. It is designed for developers and system administrators working in mixed macOS and Linux environments.
 <!-- AI:end:what-it-does -->
 
 ## Architecture
 
 <!-- AI:start:architecture -->
-The project consists of multiple components organized into distinct directories, each addressing a specific functionality. These components interact through shared build and runtime dependencies, coordinated via the `Makefile`. The directory structure is as follows:
+The project consists of four main components, each addressing specific functionality:
 
+1. **macos-vm/**: Implements macOS virtualization using KVM via QEMU and Incus.
+2. **linuxfs/**: Provides Linux filesystem access on macOS and Windows through a Go-based CLI.
+3. **compat/**: Offers compatibility tools for macOS and Linux, including utilities like `linuxify`, `mlsblk`, and `bsdcoreutils`.
+4. **btrfs-dwarfs/**: Combines BTRFS and DwarFS into a hybrid filesystem framework, including a kernel module and userspace tools.
+
+The components interact through shared build targets and dependencies defined in the `Makefile`. The `Makefile` provides common targets for building, testing, formatting, and installing the components. It also includes per-component targets for granular control. The `PREFIX` variable specifies the installation path, while `KDIR` points to the kernel build tree for the BTRFS+DwarFS module.
+
+Directory structure:
 ```plaintext
 .
-├── macos-vm/       # macOS KVM virtualization using QEMU and Incus
-├── linuxfs/        # Go-based CLI for accessing Linux filesystems on macOS/Windows
-├── compat/         # Compatibility tools for macOS and Linux (e.g., linuxify, mlsblk)
-├── btrfs-dwarfs/   # BTRFS+DwarFS hybrid filesystem (kernel module + userspace tools)
-├── btrfs-devel/    # Read-only reference to upstream BTRFS development sources
-├── .github/        # CI/CD workflows and GitHub-specific configurations
-├── LICENSE         # Project license (GPL-3.0-or-later)
-├── Makefile        # Unified build and management entry point
-└── README.md       # Project documentation
+├── .github/             # GitHub workflows and actions
+├── btrfs-devel/         # Read-only BTRFS source reference
+├── btrfs-dwarfs/        # Hybrid filesystem framework
+├── compat/              # Compatibility tools
+├── linuxfs/             # Linux filesystem access CLI
+├── macos-vm/            # macOS virtualization tools
+├── Makefile             # Build and installation rules
+├── README.md            # Project documentation
+└── LICENSE              # Licensing information
 ```
-
-Key interactions include:
-- `macos-vm` depends on `btrfs-dwarfs` for storage backends.
-- `linuxfs` and `compat` provide tools for cross-platform filesystem and compatibility support.
-- The `Makefile` orchestrates builds, tests, and installations, with support for per-component operations and host-specific configurations.
 <!-- AI:end:architecture -->
 
 ## Install
@@ -51,19 +54,23 @@ cd Incus-MacOS-Toolkit
 ## CI
 
 <!-- AI:start:ci -->
-The repository uses GitHub Actions for continuous integration. The following workflows are defined:
+The repository includes the following GitHub Actions workflows for Continuous Integration:
 
-1. **btrfs-devel-sync.yml**  
-   Synchronizes the `btrfs-devel` directory with the upstream `kdave/btrfs-devel` repository.  
-   - **Triggers**: Manual dispatch, scheduled (daily).  
-   - **Required Secrets**: `UPSTREAM_REPO_URL`, `GITHUB_TOKEN` (provided by default).  
+1. **`btrfs-devel-sync.yml`**  
+   - **Purpose**: Syncs the `btrfs-devel` directory with the upstream `kdave/btrfs-devel` repository to keep the source reference up to date.  
+   - **Triggers**: Scheduled daily at midnight UTC.  
+   - **Required Secrets**:  
+     - `UPSTREAM_REPO`: URL of the upstream repository.  
+     - `GITHUB_TOKEN`: Automatically provided by GitHub for authentication.  
 
-2. **mirror-osp-to-ooc.yaml**  
-   Mirrors the repository from an open-source platform (OSP) to an out-of-cloud (OOC) backup.  
-   - **Triggers**: Push to the default branch.  
-   - **Required Secrets**: `OOC_REPO_URL`, `OOC_SSH_KEY`.  
+2. **`mirror-osp-to-ooc.yaml`**  
+   - **Purpose**: Mirrors the repository from the open-source project (OSP) namespace to an out-of-core (OOC) namespace for external distribution.  
+   - **Triggers**: Push events to the `main` branch.  
+   - **Required Secrets**:  
+     - `OOC_REPO_URL`: URL of the target repository for mirroring.  
+     - `GITHUB_TOKEN`: Automatically provided by GitHub for authentication.  
 
-Ensure the required secrets are configured in the repository settings for workflows to function correctly.
+Ensure the required secrets are configured in the repository settings for workflows to execute successfully.
 <!-- AI:end:ci -->
 
 ## Mirror chain
@@ -83,10 +90,10 @@ Direct commits to OSP or OOC are detected and opened as PRs back to `Interested-
 ## Contributors
 
 <!-- AI:start:contributors -->
-[@Interested-Deving-1896](https://github.com/Interested-Deving-1896): 43 commits  
+[@Interested-Deving-1896](https://github.com/Interested-Deving-1896): 46 commits  
 [@ona-agent](https://github.com/ona-agent): 2 commits  
 
-*Note: This repository is a mirror. Please refer to the upstream source for additional details.*
+*Note: This repository is a mirror. Please refer to the upstream source for the original project.*
 <!-- AI:end:contributors -->
 
 ## Origins
