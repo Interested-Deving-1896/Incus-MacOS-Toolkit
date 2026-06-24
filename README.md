@@ -110,13 +110,11 @@ Original project — unified toolkit for macOS KVM virtualisation and Linux file
 ## Resources
 
 <!-- AI:start:resources -->
-| File | Description |
-|---|---|
-| [dep-graph/origins.md](https://github.com/Interested-Deving-1896/Incus-MacOS-Toolkit/blob/main/dep-graph/origins.md) | Dependency graph (Markdown table) |
+_No additional resource files found._
 <!-- AI:end:resources -->
 
 ## License
 
 <!-- AI:start:license -->
-[GPL-3.0](https://github.com/Interested-Deving-1896/Incus-MacOS-Toolkit/blob/main/LICENSE) © 2026 [Interested-Deving-1896](https://github.com/Interested-Deving-1896)
+<!-- License not detected — add a LICENSE file to this repo. -->
 <!-- AI:end:license -->
