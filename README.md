@@ -1,7 +1,8 @@
 [update-readmes]   Mode: rewrite — migrating to template structure...
 # Incus-MacOS-Toolkit
 
-[![Built with Ona](https://ona.com/build-with-ona.svg)](https://app.ona.com/#https://github.com/Interested-Deving-1896/Incus-MacOS-Toolkit)
+[![Built with Ona](https://ona.com/build-with-ona.svg)](https://app.ona.com/#https://github.com/Interested-Deving-1896/Incus-MacOS-Toolkit) [![KDE Eco](https://img.shields.io/badge/KDE%20Eco-certified-brightgreen?logo=kde&logoColor=white&style=flat-square)](https://eco.kde.org/) [![Blue Angel](https://img.shields.io/badge/Blue%20Angel-DE--UZ%20215-0055a4?style=flat-square)](https://www.blauer-engel.de/en/certification/criteria) [![Energy](https://api.green-coding.io/v1/ci/badge/get?repo=Interested-Deving-1896%2FIncus-MacOS-Toolkit&branch=main&workflow=eco-audit.yml)](https://metrics.green-coding.io/ci-index.html)
+
 
 <!-- AI:start:what-it-does -->
 This project provides a unified toolkit for macOS users to address cross-platform compatibility and virtualization needs. It enables macOS KVM virtualization using QEMU, facilitates access to Linux filesystems on macOS and Windows, offers compatibility tools for macOS and Linux interoperability, and implements a hybrid BTRFS+DwarFS storage framework. It is designed for developers and system administrators working in mixed macOS and Linux environments.
@@ -56,19 +57,19 @@ cd Incus-MacOS-Toolkit
 <!-- AI:start:ci -->
 The repository includes the following GitHub Actions workflows for Continuous Integration:
 
-1. **`btrfs-devel-sync.yml`**  
-   - **Purpose**: Syncs the `btrfs-devel` directory with the upstream `kdave/btrfs-devel` repository to keep the source reference up to date.  
-   - **Triggers**: Scheduled daily at midnight UTC.  
-   - **Required Secrets**:  
-     - `UPSTREAM_REPO`: URL of the upstream repository.  
-     - `GITHUB_TOKEN`: Automatically provided by GitHub for authentication.  
+1. **`btrfs-devel-sync.yml`**
+   - **Purpose**: Syncs the `btrfs-devel` directory with the upstream `kdave/btrfs-devel` repository to keep the source reference up to date.
+   - **Triggers**: Scheduled daily at midnight UTC.
+   - **Required Secrets**:
+     - `UPSTREAM_REPO`: URL of the upstream repository.
+     - `GITHUB_TOKEN`: Automatically provided by GitHub for authentication.
 
-2. **`mirror-osp-to-ooc.yaml`**  
-   - **Purpose**: Mirrors the repository from the open-source project (OSP) namespace to an out-of-core (OOC) namespace for external distribution.  
-   - **Triggers**: Push events to the `main` branch.  
-   - **Required Secrets**:  
-     - `OOC_REPO_URL`: URL of the target repository for mirroring.  
-     - `GITHUB_TOKEN`: Automatically provided by GitHub for authentication.  
+2. **`mirror-osp-to-ooc.yaml`**
+   - **Purpose**: Mirrors the repository from the open-source project (OSP) namespace to an out-of-core (OOC) namespace for external distribution.
+   - **Triggers**: Push events to the `main` branch.
+   - **Required Secrets**:
+     - `OOC_REPO_URL`: URL of the target repository for mirroring.
+     - `GITHUB_TOKEN`: Automatically provided by GitHub for authentication.
 
 Ensure the required secrets are configured in the repository settings for workflows to execute successfully.
 <!-- AI:end:ci -->
@@ -90,8 +91,8 @@ Direct commits to OSP or OOC are detected and opened as PRs back to `Interested-
 ## Contributors
 
 <!-- AI:start:contributors -->
-[@Interested-Deving-1896](https://github.com/Interested-Deving-1896): 46 commits  
-[@ona-agent](https://github.com/ona-agent): 2 commits  
+[@Interested-Deving-1896](https://github.com/Interested-Deving-1896): 46 commits
+[@ona-agent](https://github.com/ona-agent): 2 commits
 
 *Note: This repository is a mirror. Please refer to the upstream source for the original project.*
 <!-- AI:end:contributors -->
@@ -114,6 +115,20 @@ Original project — unified toolkit for macOS KVM virtualisation and Linux file
 |---|---|
 | [dep-graph/origins.md](https://github.com/Interested-Deving-1896/Incus-MacOS-Toolkit/blob/main/dep-graph/origins.md) | Dependency graph (Markdown table) |
 <!-- AI:end:resources -->
+
+<!-- AI:start:accessibility -->
+This repo uses automated accessibility auditing via `check-accessibility.yml`.
+
+Checks include: CODEOWNERS ownership coverage, README screen-reader compatibility,
+WCAG 2.1 AA HTML compliance, audio overview (espeak-ng), and Braille output (liblouis).
+
+
+
+
+Run the [Check Accessibility](https://github.com/Interested-Deving-1896/Incus-MacOS-Toolkit/actions/workflows/check-accessibility.yml)
+workflow to generate the first report and accessibility artifacts.
+See [DOCS/accessibility.md](https://github.com/Interested-Deving-1896/Incus-MacOS-Toolkit/blob/main/DOCS/accessibility.md) for the full reference.
+<!-- AI:end:accessibility -->
 
 ## License
 
