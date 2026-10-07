@@ -117,6 +117,8 @@ Original project — unified toolkit for macOS KVM virtualisation and Linux file
 | [dep-graph/origins.md](https://github.com/Interested-Deving-1896/Incus-MacOS-Toolkit/blob/main/dep-graph/origins.md) | Dependency graph (Markdown table) |
 <!-- AI:end:resources -->
 
+## Accessibility
+
 <!-- AI:start:accessibility -->
 This repo uses automated accessibility auditing via `check-accessibility.yml`.
 
